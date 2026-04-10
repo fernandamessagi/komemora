@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Orçamento</title>
+<style>
+body{font-family:Arial;background:#eef2f7;margin:0}
+#logoPrint{display:none}
+.container{max-width:600px;margin:auto;padding:15px}
+.card{background:#fff;border-radius:15px;padding:15px;margin-bottom:15px;box-shadow:0 4px 10px rgba(0,0,0,0.08)}
+input{width:100%;padding:10px;margin:5px 0;border-radius:10px;border:1px solid #ccc}
+.item{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:5px;padding:6px 0;border-bottom:1px solid #eee;}
+button{width:100%;padding:12px;border:none;border-radius:12px;margin-top:8px;cursor:pointer}
+.green{background:#28a745;color:#fff}
+.whats{background:#25D366;color:#fff}
+.gray{background:#6c757d;color:#fff}
+.red{background:#dc3545;color:#fff}
+.tabs{display:flex;gap:5px;margin-bottom:10px}
+.tabs button{flex:1}
+.hidden{display:none}
+.small{font-size:12px;padding:6px;width:auto}
+.pedido-info div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;}
+.pedido-info strong{color:#333;}
+.pedido-info span{color:#555;}
+
+/* NOVO */
+.info-pagamento{font-size:12px;}
+
+@media print {
+body{background:#fff}
+.tabs, button{display:none}
+.card{box-shadow:none;border:1px solid #ccc}
+#logoPrint{display:block}
+}
+
+.restante-field{display:none;}
+@media print {
+  .restante-field{display:block;}
+}
+
+
+/* STATUS BOLINHA */
+.status-dot{
+  display:inline-block;
+  width:10px;
+  height:10px;
+  border-radius:50%;
+}
+.verde{ background:#28a745; }
+.vermelho{ background:#dc3545; }
+
+</style>
+
+</head>
+<body>
+<div id="logoPrint" style="text-align:center; margin-bottom:15px;">
+  <img src="logo.png" style="max-width:250px;">
+</div>
+
+<div class="container">
+
+<div class="tabs">
+<button type="button" onclick="trocar('orc')">Orçamento</button>
+<button type="button" onclick="trocar('prod')">Produtos</button>
+<button type="button" onclick="trocar('ped')">Pedidos</button>
+</div>
+
+<div id="orc">
+
+<div class="card">
+<h3>Dados do Cliente</h3>
+
+<label>Nome do cliente</label>
+<input id="cliente" placeholder="Digite o nome">
+
+<label>Data do evento</label>
+<input id="data" type="date" onchange="calcularDataRestante()">
+
+<label>Horário do evento</label>
+<input id="hora" type="time">
+
+<label>Local da festa</label>
+<input id="local" placeholder="Digite o local">
+
+<label>Telefone</label>
+<input id="telefone" placeholder="(00) 00000-0000" onblur="this.value = formatarTelefone(this.value)">
+
+<label>Data da entrada do pagamento</label>
+<input id="dataEntrada" type="date">
+
+<div class="restante-field">
+<label>Data do pagamento restante (automático - 1 dia antes do evento)</label>
+<input id="dataRestante" type="date" readonly>
+</div>
+
+</div>
+
+<div class="card">
+<h3>Pedido</h3>
+<div id="listaProdutos"></div>
+</div>
+
+<div class="card">
+<h3>Total: R$ <span id="total">0.00</span></h3>
+<button class="green" onclick="salvarPedido()">Salvar Orçamento</button>
+<button class="whats" onclick="enviarWhats()">Envio de Orçamento</button>
+</div>
+
+</div>
+
+<div id="prod" class="hidden">
+<div class="card">
+<h3>Cadastro de Produtos</h3>
+<div id="listaProdutosCadastro"></div>
+<button class="green" onclick="abrirCadastro()">+ Cadastrar Novo Produto</button>
+</div>
+</div>
+
+<div id="ped" class="hidden">
+<div class="card">
+<h3>Pedidos</h3>
+<div id="listaPedidos"></div>
+</div>
+</div>
+
+<div id="telaPedido" class="hidden">
+<div class="card">
+
+<div id="detalhePedido"></div>
+
+<div style="display:flex; gap:5px;">
+<button class="gray" onclick="fecharPedido()">Voltar</button>
+<button class="green" onclick="confirmarPedido()">Confirmar Pedido</button>
+<button class="whats" onclick="imprimirPedido()">Imprimir</button>
+</div>
+
+</div>
+</div>
+
+<div id="modal" class="hidden">
+<div class="card">
+<h3>Novo Produto</h3>
+<input id="nomeProduto" placeholder="Nome">
+<input id="valorProduto" type="number" placeholder="Valor">
+<button class="green" onclick="adicionarProduto()">Salvar Produto</button>
+<button onclick="fecharCadastro()">Cancelar</button>
+</div>
+</div>
+
+</div>
+
+<script>
+let produtos = JSON.parse(localStorage.getItem("produtos")) || [];
+let pedidos = JSON.parse(localStorage.getItem("pedidos")) || [];
+let editIndex = null;
+let pedidoAtualIndex = null;
+
+function formatarData(dataISO){
+if(!dataISO) return "";
+const [ano, mes, dia] = dataISO.split("-");
+return `${dia}/${mes}/${ano}`;
+}
+
+function formatarDataHora(dataISO){
+if(!dataISO) return "";
+const data = new Date(dataISO);
+
+const dia = String(data.getDate()).padStart(2,'0');
+const mes = String(data.getMonth()+1).padStart(2,'0');
+const ano = data.getFullYear();
+
+const hora = String(data.getHours()).padStart(2,'0');
+const min = String(data.getMinutes()).padStart(2,'0');
+
+return `${dia}/${mes}/${ano} ${hora}:${min}`;
+}
+
+function trocar(aba){
+document.getElementById("orc").classList.add("hidden");
+document.getElementById("ped").classList.add("hidden");
+document.getElementById("prod").classList.add("hidden");
+document.getElementById("telaPedido").classList.add("hidden");
+document.getElementById(aba).classList.remove("hidden");
+listarPedidos();
+listarProdutosCadastro();
+}
+
+function salvarDados(){
+localStorage.setItem("produtos", JSON.stringify(produtos));
+localStorage.setItem("pedidos", JSON.stringify(pedidos));
+}
+
+function abrirCadastro(index=null){
+editIndex = index;
+document.getElementById("modal").classList.remove("hidden");
+if(index !== null){
+nomeProduto.value = produtos[index].nome;
+valorProduto.value = produtos[index].valor;
+}
+}
+
+function fecharCadastro(){
+document.getElementById("modal").classList.add("hidden");
+nomeProduto.value = "";
+valorProduto.value = "";
+editIndex = null;
+}
+
+function adicionarProduto(){
+const nome = nomeProduto.value;
+const valor = parseFloat(valorProduto.value);
+if(!nome || !valor) return alert("Preencha tudo");
+if(editIndex !== null){
+produtos[editIndex] = {nome, valor};
+}else{
+produtos.push({nome, valor});
+}
+salvarDados();
+fecharCadastro();
+listarProdutos();
+listarProdutosCadastro();
+}
+
+function excluirProduto(i){
+if(!confirm("Excluir produto?")) return;
+produtos.splice(i,1);
+salvarDados();
+listarProdutos();
+listarProdutosCadastro();
+}
+
+function listarProdutos(){
+const lista = document.getElementById("listaProdutos");
+lista.innerHTML = "";
+produtos.forEach((p,i)=>{
+lista.innerHTML += `
+<div class="item">
+<span>${p.nome} - R$ ${p.valor.toFixed(2)}</span>
+<input type="number" min="0" placeholder="Qtd" onchange="calcular()" id="q${i}" style="width:90px;padding:8px;">
+</div>`;
+});
+}
+
+function listarProdutosCadastro(){
+const lista = document.getElementById("listaProdutosCadastro");
+if(!lista) return;
+lista.innerHTML = "";
+produtos.forEach((p,i)=>{
+lista.innerHTML += `
+<div class="item">
+<span>${p.nome} - R$ ${p.valor.toFixed(2)}</span>
+<div>
+<button class="small gray" onclick="abrirCadastro(${i})">Editar</button>
+<button class="small red" onclick="excluirProduto(${i})">Excluir</button>
+</div>
+</div>`;
+});
+}
+
+function calcular(){
+let total = 0;
+produtos.forEach((p,i)=>{
+const campo = document.getElementById("q"+i);
+if(!campo) return;
+const qtd = parseInt(campo.value)||0;
+if(qtd>0) total += qtd*p.valor;
+});
+document.getElementById("total").innerText = total.toFixed(2);
+}
+
+
+function formatarTelefone(numero){
+  if(!numero) return "";
+
+  numero = numero.replace(/\D/g,'');
+
+  if(numero.length === 11){
+    return numero.replace(/(\d{2})(\d{5})(\d{4})/, "($1)$2-$3");
+  } else if(numero.length === 10){
+    return numero.replace(/(\d{2})(\d{4})(\d{4})/, "($1)$2-$3");
+  }
+
+  return numero;
+}
+
+function montarPedido(){
+let itens = [];
+let total = 0;
+produtos.forEach((p,i)=>{
+const campo = document.getElementById("q"+i);
+if(!campo) return;
+const qtd = parseInt(campo.value)||0;
+if(qtd>0){
+let sub = qtd*p.valor;
+total+=sub;
+itens.push({qtd, nome:p.nome, total:sub});
+}
+});
+return {
+cliente: cliente.value,
+data: data.value,
+local: local.value,
+telefone: formatarTelefone(telefone.value),
+hora: hora.value,
+dataEntrada: dataEntrada.value,
+dataRestante: dataRestante.value,
+itens,
+total
+};
+}
+
+function salvarPedido(){
+const pedido = montarPedido();
+
+// NOVO: adicionar data de salvamento
+pedido.dataSalvo = new Date().toISOString();
+pedido.status = 'Pendente';
+pedidos.push(pedido);
+salvarDados();
+alert("Orçamento salvo!");
+limparCampos();
+}
+
+function limparCampos(){
+cliente.value = "";
+data.value = "";
+hora.value = "";
+local.value = "";
+telefone.value = "";
+dataEntrada.value = "";
+dataRestante.value = "";
+produtos.forEach((p,i)=>{
+const campo = document.getElementById("q"+i);
+if(campo) campo.value = "";
+});
+document.getElementById("total").innerText = "0.00";
+}
+
+function listarPedidos(){
+const lista = document.getElementById("listaPedidos");
+if(!lista) return;
+lista.innerHTML="";
+
+// ordenar: Confirmado primeiro (data mais próxima), depois Pendente (data mais próxima)
+pedidos.sort((a,b)=>{
+if(a.status==='Confirmado' && b.status!=='Confirmado') return -1;
+if(a.status!=='Confirmado' && b.status==='Confirmado') return 1;
+return new Date(a.data) - new Date(b.data);
+});
+pedidos.forEach((p,i)=>{
+lista.innerHTML += `
+<div class="item">
+<span style="flex:1;">${p.cliente}</span>
+<span style="width:20px; display:flex; justify-content:center;">
+<span class="status-dot ${p.status === 'Confirmado' ? 'verde' : 'vermelho'}"></span>
+</span>
+<div style="display:flex; gap:5px;">
+<button class="small gray" onclick="verPedido(${i})">Ver</button>
+<button class="small green" onclick="editarPedido(${i})">Editar</button>
+<button class="small red" onclick="excluirPedido(${i})">Excluir</button>
+</div>
+</div>`;
+});
+}
+
+function verPedido(i){
+pedidoAtualIndex = i;
+const p = pedidos[i];
+
+let diasDiferenca = null;
+
+if(p.data && p.dataEntrada){
+  const dataEvento = new Date(p.data + "T00:00:00");
+  const dataEntrada = new Date(p.dataEntrada + "T00:00:00");
+
+  const diffTime = dataEvento - dataEntrada;
+  diasDiferenca = diffTime / (1000 * 60 * 60 * 24);
+}
+
+let html = `
+
+
+
+<div class="pedido-info">
+  <div><strong>Nome:</strong><span style="flex:1;">${p.cliente}</span>
+<span style="width:20px; display:flex; justify-content:center;">
+<span class="status-dot ${p.status === 'Confirmado' ? 'verde' : 'vermelho'}"></span>
+</span></div>
+  <div><strong>Data:</strong><span>${formatarData(p.data)}</span></div>
+  <div><strong>Horário:</strong><span>${p.hora}</span></div>
+  <div><strong>Local:</strong><span>${p.local}</span></div>
+  <div><strong>Telefone:</strong><span>${p.telefone}</span></div>
+</div>
+<hr>
+<h4 style="margin-top:10px; color:#333;">Detalhes do Pedido</h4>
+`;
+p.itens.forEach(it=>{
+html += `<p>${it.qtd} ${it.nome} - R$ ${it.total.toFixed(2)}</p>`;
+});
+const metade = (p.total / 2).toFixed(2);
+const total = p.total.toFixed(2);
+
+let textoEntrada = "";
+let mostrarRestante = true;
+
+if(diasDiferenca !== null && diasDiferenca < 3){
+  textoEntrada = `
+  <p class="info-pagamento">
+    <strong>VALOR DO PAGAMENTO:</strong> R$ ${total}
+    - Data limite para pagamento ${formatarData(p.dataEntrada || '')}
+  </p>`;
+
+  mostrarRestante = false;
+}else{
+  textoEntrada = `
+  <p class="info-pagamento">
+    <strong>VALOR ENTRADA:</strong> R$ ${metade}
+    - Data limite para pagamento ${formatarData(p.dataEntrada || '')}
+  </p>`;
+}
+
+
+html += `
+<hr>
+<p><strong>Total: R$ ${p.total.toFixed(2)}</strong></p>
+
+${textoEntrada}
+
+${mostrarRestante ? `
+<p class="info-pagamento">
+<strong>VALOR RESTANTE:</strong> R$ ${metade} 
+- Data limite para pagamento ${formatarData(p.dataRestante || '')}
+</p>` : ``}
+
+<br>
+
+<p style="font-size:12px;">
+*Este orçamento é válido por 5 dias a partir de ${p.dataEntrada ? formatarData(p.dataEntrada) : '--/--/----'}.
+</p>
+
+<p style="font-size:12px;">
+*Para garantir a qualidade e evitar desperdícios, todos os pedidos são produzidos sob encomenda. 
+Por isso, solicitamos um sinal de 50% do valor no momento da confirmação do pedido como garantia. 
+Após a produção dos salgados, não será possível realizar cancelamentos ou devoluções.
+</p>
+`;
+document.getElementById("detalhePedido").innerHTML = html;
+trocar("telaPedido");
+}
+
+function fecharPedido(){
+trocar("ped");
+}
+
+function excluirPedido(i){
+if(!confirm("Excluir pedido?")) return;
+pedidos.splice(i,1);
+salvarDados();
+listarPedidos();
+}
+
+function editarPedido(i){
+const p = pedidos[i];
+
+cliente.value = p.cliente;
+data.value = p.data;
+hora.value = p.hora;
+local.value = p.local;
+telefone.value = p.telefone;
+dataEntrada.value = p.dataEntrada || "";
+dataRestante.value = p.dataRestante || "";
+
+produtos.forEach((prod,j)=>{
+const campo = document.getElementById("q"+j);
+if(campo) campo.value = "";
+});
+
+p.itens.forEach(item=>{
+const index = produtos.findIndex(prod => prod.nome === item.nome);
+if(index !== -1){
+const campo = document.getElementById("q"+index);
+if(campo) campo.value = item.qtd;
+}
+});
+
+calcular();
+
+pedidos.splice(i,1);
+salvarDados();
+
+trocar('orc');
+}
+
+function enviarWhats(){
+const p = montarPedido();
+let texto = `📋 ORÇAMENTO
+
+Cliente: ${p.cliente}
+Data: ${formatarData(p.data)}
+Local: ${p.local}
+Horário: ${p.hora}
+
+`;
+p.itens.forEach(it=> texto+=`${it.qtd} ${it.nome} - R$ ${it.total.toFixed(2)}
+`);
+texto += `
+Total: R$ ${p.total.toFixed(2)}`;
+window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`);
+}
+
+function imprimirPedido(){
+window.print();
+}
+
+function confirmarPedido(){
+if(pedidoAtualIndex === null) return;
+
+if(!confirm("Confirmar este pedido?")) return;
+
+pedidos[pedidoAtualIndex].status = 'Confirmado';
+salvarDados();
+
+alert("Pedido confirmado com sucesso!");
+trocar('ped');
+}
+
+listarProdutos();
+trocar('orc');
+
+function calcularDataRestante() {
+  const dataEvento = document.getElementById("data").value;
+  if (!dataEvento) return;
+
+  const data = new Date(dataEvento + "T00:00:00");
+  data.setDate(data.getDate() - 1);
+
+  const ano = data.getFullYear();
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const dia = String(data.getDate()).padStart(2, '0');
+
+  document.getElementById("dataRestante").value = `${ano}-${mes}-${dia}`;
+}
+
+</script>
+
+</body>
+</html>
